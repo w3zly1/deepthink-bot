@@ -2,14 +2,12 @@
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║         DEEPTHINK AUTOHUSTLE v3.0 - ULTIMATE MONEY EDITION               ║
 ║                                                                          ║
-║  🧠 20 специализированных AI-агентов                                     ║
-║  💰 Система генерации идей для заработка                                 ║
-║  📊 Калькулятор потенциального дохода                                    ║
-║  🎯 Готовые бизнес-шаблоны                                               ║
-║  ⚡ Автоматическая генерация контента                                    ║
-║  🔧 Оптимизация под лимиты API                                           ║
+║  🚀 Готов к деплою на Render.com                                         ║
+║  🤖 20 AI-агентов для заработка                                          ║
+║  💰 База знаний о монетизации                                            ║
+║  ⚡ Оптимизирован для бесплатных API                                     ║
 ║                                                                          ║
-║  Python 3.8+ | Render.com Ready | OpenRouter Optimized                   ║
+║  Python 3.8+ Compatible | Render.com Ready                               ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -17,62 +15,98 @@ import asyncio
 import json
 import os
 import re
-import random
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple, Set
+import sys
+import threading
+from datetime import datetime
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
-from enum import Enum, auto
+from enum import Enum
 from collections import defaultdict
-import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ═══════════════════════════════════════════════════════════════════════════
-# КОНФИГУРАЦИЯ - ОПТИМИЗИРОВАННАЯ ДЛЯ ЭКОНОМИИ ТОКЕНОВ
+# HEALTH CHECK HTTP SERVER (для Render.com)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    """Простой HTTP handler для health check"""
+    
+    def do_GET(self):
+        """Ответ на GET запросы"""
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        
+        response = {
+            "status": "ok",
+            "service": "DeepThink AutoHustle v3.0",
+            "timestamp": datetime.now().isoformat()
+        }
+        self.wfile.write(json.dumps(response).encode())
+    
+    def do_HEAD(self):
+        """Ответ на HEAD запросы"""
+        self.send_response(200)
+        self.end_headers()
+    
+    def log_message(self, format, *args):
+        """Отключаем логирование HTTP запросов"""
+        pass
+
+def start_health_server():
+    """Запуск HTTP сервера для health check в отдельном потоке"""
+    port = int(os.environ.get('PORT', 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"🌐 Health check server запущен на порту {port}")
+    server.serve_forever()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# КОНФИГУРАЦИЯ
 # ═══════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class Config:
     """Конфигурация приложения"""
     
-    # API ключи
-    TELEGRAM_TOKEN: str = "8510653021:AAFCsjXyWLweEFBPrZD_wxlUmRe8uRQjQDY"
-    OPENROUTER_KEY: str = "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"
+    # API ключи (можно переопределить через environment variables)
+    TELEGRAM_TOKEN: str = field(default_factory=lambda: os.environ.get(
+        'TELEGRAM_TOKEN', 
+        '8510653021:AAFCsjXyWLweEFBPrZD_wxlUmRe8uRQjQDY'
+    ))
     
-    # Модели - БЕСПЛАТНЫЕ И ЭКОНОМНЫЕ
+    OPENROUTER_KEY: str = field(default_factory=lambda: os.environ.get(
+        'OPENROUTER_KEY',
+        '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'
+    ))
+    
+    # БЕСПЛАТНЫЕ МОДЕЛИ - приоритет
     FREE_MODELS: List[str] = field(default_factory=lambda: [
-        "google/gemini-2.0-flash-exp:free",      # Бесплатная, быстрая
-        "meta-llama/llama-3.1-8b-instruct:free", # Бесплатная Llama
-        "google/gemma-2-9b-it:free",             # Бесплатная Gemma
-        "mistralai/mistral-7b-instruct:free",   # Бесплатная Mistral
+        "google/gemini-2.0-flash-exp:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "qwen/qwen-2.5-72b-instruct:free",
+        "google/gemma-2-9b-it:free",
+        "mistralai/mistral-7b-instruct:free",
+        "huggingfaceh4/zephyr-7b-beta:free",
     ])
     
-    PREMIUM_MODELS: List[str] = field(default_factory=lambda: [
-        "anthropic/claude-3.5-sonnet",
-        "openai/gpt-4o-mini",
-        "google/gemini-pro",
-    ])
+    DEFAULT_MODEL: str = "google/gemini-2.0-flash-exp:free"
     
-    DEFAULT_MODEL: str = "google/gemini-2.0-flash-exp:free"  # Бесплатная по умолчанию
-    
-    # ОПТИМИЗИРОВАННЫЕ ЛИМИТЫ ТОКЕНОВ
-    MAX_TOKENS_FREE: int = 1000      # Для бесплатных запросов
-    MAX_TOKENS_STANDARD: int = 800   # Стандартный ответ
-    MAX_TOKENS_SHORT: int = 400      # Короткий ответ
-    MAX_TOKENS_ACTION: int = 1200    # Для действий
+    # ЛИМИТЫ ТОКЕНОВ - оптимизированы для бесплатного плана
+    MAX_TOKENS_RESPONSE: int = 800
+    MAX_TOKENS_SHORT: int = 400
+    MAX_TOKENS_ACTION: int = 1000
     
     TEMPERATURE: float = 0.7
     
-    # Лимиты агентов
-    MAX_AGENTS_PER_QUERY: int = 3    # Меньше агентов = меньше токенов
-    MAX_CONTEXT_LENGTH: int = 2000
-    MAX_HISTORY_ITEMS: int = 10
-    MAX_ACTIONS_PER_RESPONSE: int = 5
+    # Лимиты
+    MAX_AGENTS: int = 3
+    MAX_CONTEXT: int = 1500
+    MAX_HISTORY: int = 10
+    MAX_ACTIONS: int = 5
     
     # Таймауты
     API_TIMEOUT: int = 60
     POLLING_TIMEOUT: int = 30
-    
-    # Режим экономии
-    ECONOMY_MODE: bool = True  # Использовать бесплатные модели
     
     @property
     def TELEGRAM_API(self) -> str:
@@ -84,477 +118,81 @@ config = Config()
 # ЛОГИРОВАНИЕ
 # ═══════════════════════════════════════════════════════════════════════════
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)s | %(message)s',
-    datefmt='%H:%M:%S'
-)
-logger = logging.getLogger('DeepThink')
+def log(message: str, level: str = "INFO"):
+    """Простое логирование"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"[{timestamp}] {level}: {message}", flush=True)
 
 # ═══════════════════════════════════════════════════════════════════════════
-# ПЕРЕЧИСЛЕНИЯ
+# ИМПОРТЫ (после конфигурации)
 # ═══════════════════════════════════════════════════════════════════════════
 
-class AgentType(Enum):
-    """Типы агентов - 20 специализаций"""
-    # Основные
-    RESEARCHER = "researcher"
-    MONEY_EXPERT = "money_expert"
-    STRATEGIST = "strategist"
-    CONTENT_CREATOR = "content_creator"
-    CODER = "coder"
-    MARKETER = "marketer"
-    
-    # Специализированные для заработка
-    DROPSHIPPER = "dropshipper"
-    AFFILIATE = "affiliate"
-    FREELANCER = "freelancer"
-    CRYPTO_EXPERT = "crypto_expert"
-    ECOMMERCE = "ecommerce"
-    SAAS_EXPERT = "saas_expert"
-    
-    # Аналитика и креатив
-    DATA_ANALYST = "data_analyst"
-    CREATIVE_DIRECTOR = "creative_director"
-    COPYWRITER = "copywriter"
-    SEO_EXPERT = "seo_expert"
-    
-    # Специалисты
-    INVESTOR = "investor"
-    AUTOMATION = "automation"
-    COACH = "coach"
-    LEGAL = "legal"
+log("🚀 Запуск DeepThink AutoHustle v3.0...")
 
-class IncomeLevel(Enum):
-    """Уровни дохода"""
-    STARTER = "starter"       # $100-500/мес
-    GROWING = "growing"       # $500-2000/мес
-    SERIOUS = "serious"       # $2000-10000/мес
-    SCALING = "scaling"       # $10000+/мес
-
-class BusinessModel(Enum):
-    """Бизнес-модели"""
-    FREELANCE = "freelance"
-    AFFILIATE = "affiliate"
-    DROPSHIPPING = "dropshipping"
-    DIGITAL_PRODUCTS = "digital_products"
-    SAAS = "saas"
-    CONTENT = "content"
-    CONSULTING = "consulting"
-    ECOMMERCE = "ecommerce"
-    AUTOMATION = "automation"
-    AI_SERVICES = "ai_services"
-
-# ═══════════════════════════════════════════════════════════════════════════
-# БАЗА ЗНАНИЙ О СПОСОБАХ ЗАРАБОТКА
-# ═══════════════════════════════════════════════════════════════════════════
-
-class MoneyKnowledgeBase:
-    """База знаний о способах заработка"""
-    
-    INCOME_STREAMS = {
-        BusinessModel.FREELANCE: {
-            "name": "🎨 Фриланс",
-            "description": "Продажа своих навыков",
-            "income_range": "$500 - $10,000/мес",
-            "time_to_profit": "1-4 недели",
-            "difficulty": "Средняя",
-            "ai_automation": "40-60%",
-            "skills_needed": ["Копирайтинг", "Дизайн", "Разработка", "Маркетинг"],
-            "platforms": ["Upwork", "Fiverr", "Kwork", "FL.ru"],
-            "steps": [
-                "Выбрать нишу и навык",
-                "Создать портфолио (AI поможет)",
-                "Зарегистрироваться на платформах",
-                "Создать убедительный профиль",
-                "Отправлять 10-20 откликов в день"
-            ]
-        },
-        BusinessModel.AFFILIATE: {
-            "name": "🔗 Партнёрский маркетинг",
-            "description": "Комиссия за продажи по вашим ссылкам",
-            "income_range": "$200 - $50,000/мес",
-            "time_to_profit": "1-3 месяца",
-            "difficulty": "Средняя",
-            "ai_automation": "70-80%",
-            "skills_needed": ["Контент", "SEO", "Реклама"],
-            "platforms": ["Amazon Associates", "Admitad", "CJ Affiliate"],
-            "steps": [
-                "Выбрать нишу с высокими комиссиями",
-                "Создать контент-площадку",
-                "Генерировать контент с AI",
-                "Привлекать трафик",
-                "Оптимизировать конверсию"
-            ]
-        },
-        BusinessModel.DROPSHIPPING: {
-            "name": "📦 Дропшиппинг",
-            "description": "Продажа без склада",
-            "income_range": "$500 - $30,000/мес",
-            "time_to_profit": "2-6 недель",
-            "difficulty": "Средняя",
-            "ai_automation": "50-70%",
-            "skills_needed": ["Маркетинг", "Аналитика", "Реклама"],
-            "platforms": ["Shopify", "WooCommerce", "Wildberries", "Ozon"],
-            "steps": [
-                "Найти winning product",
-                "Создать магазин",
-                "Настроить рекламу",
-                "Автоматизировать обработку заказов",
-                "Масштабировать"
-            ]
-        },
-        BusinessModel.DIGITAL_PRODUCTS: {
-            "name": "📱 Цифровые продукты",
-            "description": "Курсы, шаблоны, гайды",
-            "income_range": "$100 - $100,000/мес",
-            "time_to_profit": "2-8 недель",
-            "difficulty": "Низкая-Средняя",
-            "ai_automation": "80-90%",
-            "skills_needed": ["Экспертиза в нише", "Маркетинг"],
-            "platforms": ["Gumroad", "Notion", "Teachable", "GetCourse"],
-            "steps": [
-                "Определить боль аудитории",
-                "Создать продукт с помощью AI",
-                "Настроить воронку продаж",
-                "Запустить трафик",
-                "Собирать отзывы и улучшать"
-            ]
-        },
-        BusinessModel.SAAS: {
-            "name": "💻 SaaS / Микро-SaaS",
-            "description": "Программное обеспечение как услуга",
-            "income_range": "$500 - $500,000/мес",
-            "time_to_profit": "1-6 месяцев",
-            "difficulty": "Высокая",
-            "ai_automation": "30-50%",
-            "skills_needed": ["Программирование", "Маркетинг", "UX"],
-            "platforms": ["Stripe", "Paddle", "AWS", "Vercel"],
-            "steps": [
-                "Найти проблему для решения",
-                "MVP за 2-4 недели",
-                "Получить первых 10 пользователей",
-                "Итерировать на основе фидбэка",
-                "Масштабировать маркетинг"
-            ]
-        },
-        BusinessModel.CONTENT: {
-            "name": "📝 Контент-бизнес",
-            "description": "YouTube, блог, подкаст",
-            "income_range": "$100 - $100,000/мес",
-            "time_to_profit": "3-12 месяцев",
-            "difficulty": "Средняя",
-            "ai_automation": "60-80%",
-            "skills_needed": ["Контент", "Постоянство", "Маркетинг"],
-            "platforms": ["YouTube", "Telegram", "TikTok", "Medium"],
-            "steps": [
-                "Выбрать нишу и формат",
-                "Создать контент-план с AI",
-                "Публиковать регулярно",
-                "Монетизировать аудиторию",
-                "Диверсифицировать доходы"
-            ]
-        },
-        BusinessModel.AI_SERVICES: {
-            "name": "🤖 AI-сервисы",
-            "description": "Услуги на основе AI",
-            "income_range": "$1,000 - $50,000/мес",
-            "time_to_profit": "1-4 недели",
-            "difficulty": "Низкая-Средняя",
-            "ai_automation": "90-95%",
-            "skills_needed": ["Промпт-инжиниринг", "Маркетинг"],
-            "platforms": ["Собственный бот", "Fiverr", "Telegram"],
-            "steps": [
-                "Выбрать AI-услугу (тексты, изображения, код)",
-                "Создать воронку/бота",
-                "Настроить автоматизацию",
-                "Привлечь клиентов",
-                "Масштабировать"
-            ]
-        },
-        BusinessModel.AUTOMATION: {
-            "name": "⚙️ Автоматизация для бизнеса",
-            "description": "Боты, интеграции, автоматизации",
-            "income_range": "$2,000 - $30,000/мес",
-            "time_to_profit": "2-4 недели",
-            "difficulty": "Средняя",
-            "ai_automation": "60-80%",
-            "skills_needed": ["No-code/Low-code", "Логика", "Коммуникация"],
-            "platforms": ["Make", "Zapier", "n8n", "Telegram Bots"],
-            "steps": [
-                "Изучить инструменты автоматизации",
-                "Найти бизнесы с рутинными процессами",
-                "Предложить автоматизацию",
-                "Создать решение",
-                "Брать абонентскую плату"
-            ]
-        }
-    }
-    
-    QUICK_WINS = [
-        {
-            "name": "AI-копирайтинг на Kwork",
-            "income": "$300-1000/мес",
-            "time": "3-7 дней до первого заказа",
-            "steps": ["Регистрация", "Создать 5 кворков", "AI пишет тексты"]
-        },
-        {
-            "name": "Telegram-бот для бизнеса",
-            "income": "$500-3000/проект",
-            "time": "1-2 недели",
-            "steps": ["Изучить aiogram", "Найти клиента", "Создать бота"]
-        },
-        {
-            "name": "AI-дизайн на Fiverr",
-            "income": "$500-2000/мес",
-            "time": "1-2 недели",
-            "steps": ["Midjourney/DALL-E", "Создать портфолио", "Продавать"]
-        },
-        {
-            "name": "Notion-шаблоны",
-            "income": "$100-5000/мес",
-            "time": "1 неделя",
-            "steps": ["Создать шаблон", "Gumroad", "Продвигать в Twitter/Reddit"]
-        },
-        {
-            "name": "AI-консультации",
-            "income": "$1000-5000/мес",
-            "time": "Сразу",
-            "steps": ["Упаковать экспертизу", "Calendly", "LinkedIn/Telegram"]
-        }
-    ]
-    
-    NICHES_2024_2025 = [
-        {"niche": "AI-инструменты для бизнеса", "trend": "🔥🔥🔥", "competition": "Средняя"},
-        {"niche": "Автоматизация с n8n/Make", "trend": "🔥🔥🔥", "competition": "Низкая"},
-        {"niche": "Микро-SaaS", "trend": "🔥🔥🔥", "competition": "Средняя"},
-        {"niche": "AI-контент для соцсетей", "trend": "🔥🔥", "competition": "Высокая"},
-        {"niche": "Telegram-боты", "trend": "🔥🔥", "competition": "Средняя"},
-        {"niche": "No-code разработка", "trend": "🔥🔥", "competition": "Средняя"},
-        {"niche": "Образовательные продукты", "trend": "🔥🔥", "competition": "Высокая"},
-        {"niche": "E-commerce автоматизация", "trend": "🔥🔥", "competition": "Низкая"},
-    ]
-
-    @classmethod
-    def get_business_model(cls, model: BusinessModel) -> Dict:
-        return cls.INCOME_STREAMS.get(model, {})
-    
-    @classmethod
-    def get_quick_wins(cls) -> List[Dict]:
-        return cls.QUICK_WINS
-    
-    @classmethod
-    def get_hot_niches(cls) -> List[Dict]:
-        return cls.NICHES_2024_2025
-    
-    @classmethod
-    def format_business_model(cls, model: BusinessModel) -> str:
-        data = cls.get_business_model(model)
-        if not data:
-            return "Информация недоступна"
-        
-        steps = "\n".join([f"  {i+1}. {s}" for i, s in enumerate(data['steps'])])
-        platforms = ", ".join(data['platforms'])
-        
-        return f"""
-{data['name']}
-
-📝 {data['description']}
-💵 Доход: {data['income_range']}
-⏱ До первой прибыли: {data['time_to_profit']}
-📊 Сложность: {data['difficulty']}
-🤖 AI-автоматизация: {data['ai_automation']}
-
-📋 Шаги:
-{steps}
-
-🌐 Платформы: {platforms}
-"""
-
-# ═══════════════════════════════════════════════════════════════════════════
-# СТРУКТУРЫ ДАННЫХ
-# ═══════════════════════════════════════════════════════════════════════════
-
-@dataclass
-class UserProfile:
-    """Профиль пользователя"""
-    user_id: int
-    username: str = ""
-    first_name: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
-    last_active: datetime = field(default_factory=datetime.now)
-    total_queries: int = 0
-    total_tasks: int = 0
-    expertise_level: str = "beginner"
-    income_goal: str = "$1000/мес"
-    preferred_models: List[str] = field(default_factory=list)
-    interests: List[str] = field(default_factory=list)
-    completed_actions: List[str] = field(default_factory=list)
-
-@dataclass
-class ConversationContext:
-    """Контекст разговора"""
-    user_id: int
-    messages: List[Dict] = field(default_factory=list)
-    current_topic: str = ""
-    last_query: str = ""
-    last_response: str = ""
-    last_actions: List[Dict] = field(default_factory=list)
-    session_start: datetime = field(default_factory=datetime.now)
-    
-    def add_message(self, role: str, content: str):
-        self.messages.append({
-            "role": role,
-            "content": content[:500],  # Лимит для экономии
-            "time": datetime.now().isoformat()
-        })
-        if len(self.messages) > config.MAX_HISTORY_ITEMS:
-            self.messages = self.messages[-config.MAX_HISTORY_ITEMS:]
-    
-    def get_summary(self) -> str:
-        if not self.messages:
-            return ""
-        recent = self.messages[-3:]
-        return "\n".join([f"{m['role']}: {m['content'][:150]}" for m in recent])
-
-# ═══════════════════════════════════════════════════════════════════════════
-# СТАТИСТИКА
-# ═══════════════════════════════════════════════════════════════════════════
-
-class Statistics:
-    """Система статистики"""
-    
-    def __init__(self):
-        self.queries_total = 0
-        self.tasks_completed = 0
-        self.tokens_saved = 0
-        self.errors = 0
-        self.start_time = datetime.now()
-        self.agents_usage: Dict[str, int] = defaultdict(int)
-        self.models_usage: Dict[str, int] = defaultdict(int)
-        self.popular_topics: Dict[str, int] = defaultdict(int)
-    
-    def record_query(self, topic: str = "general"):
-        self.queries_total += 1
-        self.popular_topics[topic] += 1
-    
-    def record_model_usage(self, model: str):
-        self.models_usage[model] += 1
-    
-    def record_tokens_saved(self, saved: int):
-        self.tokens_saved += saved
-    
-    def record_agent(self, agent: str):
-        self.agents_usage[agent] += 1
-    
-    def record_task(self):
-        self.tasks_completed += 1
-    
-    def record_error(self):
-        self.errors += 1
-    
-    def get_summary(self) -> str:
-        uptime = datetime.now() - self.start_time
-        hours = uptime.total_seconds() / 3600
-        
-        top_agents = sorted(self.agents_usage.items(), key=lambda x: x[1], reverse=True)[:5]
-        top_topics = sorted(self.popular_topics.items(), key=lambda x: x[1], reverse=True)[:5]
-        
-        return f"""📊 *СТАТИСТИКА DEEPTHINK v3.0*
-
-⏱ Время работы: {hours:.1f} часов
-💬 Запросов: {self.queries_total}
-✅ Задач выполнено: {self.tasks_completed}
-💰 Токенов сэкономлено: ~{self.tokens_saved}
-❌ Ошибок: {self.errors}
-
-🤖 *Топ агентов:*
-{chr(10).join([f"• {a}: {c}" for a, c in top_agents]) or "• Нет данных"}
-
-📈 *Популярные темы:*
-{chr(10).join([f"• {t}: {c}" for t, c in top_topics]) or "• Нет данных"}
-
-💡 Режим экономии: {'✅ ВКЛ' if config.ECONOMY_MODE else '❌ ВЫКЛ'}
-"""
-
-stats = Statistics()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# AI ДВИЖОК - ОПТИМИЗИРОВАННЫЙ
-# ═══════════════════════════════════════════════════════════════════════════
-
-print("🚀 Загрузка системы...")
-
-import httpx
+try:
+    import httpx
+    log("✅ httpx загружен")
+except ImportError as e:
+    log(f"❌ Ошибка импорта httpx: {e}", "ERROR")
+    sys.exit(1)
 
 try:
     from openai import OpenAI
-    ai_client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=config.OPENROUTER_KEY
-    )
-    logger.info("✅ AI клиент готов")
-except Exception as e:
-    logger.error(f"❌ Ошибка AI: {e}")
-    ai_client = None
+    log("✅ openai загружен")
+except ImportError as e:
+    log(f"❌ Ошибка импорта openai: {e}", "ERROR")
+    sys.exit(1)
 
-class AIEngine:
-    """Оптимизированный AI движок с fallback на бесплатные модели"""
+# ═══════════════════════════════════════════════════════════════════════════
+# AI КЛИЕНТ
+# ═══════════════════════════════════════════════════════════════════════════
+
+class AIClient:
+    """AI клиент с поддержкой бесплатных моделей и fallback"""
     
     def __init__(self):
-        self.client = ai_client
-        self.current_model_index = 0
-        self.request_count = 0
-        self.errors_count = 0
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=config.OPENROUTER_KEY
+        )
+        self.model_index = 0
+        self.requests = 0
+        self.errors = 0
+        log("✅ AI клиент инициализирован")
     
-    def _get_model(self, prefer_free: bool = True) -> str:
-        """Получить модель с учетом режима экономии"""
-        if config.ECONOMY_MODE or prefer_free:
-            models = config.FREE_MODELS
-        else:
-            models = config.PREMIUM_MODELS
-        
-        # Ротация моделей при ошибках
-        model = models[self.current_model_index % len(models)]
-        return model
+    def _get_model(self) -> str:
+        """Получить текущую модель"""
+        models = config.FREE_MODELS
+        return models[self.model_index % len(models)]
     
-    def _rotate_model(self):
+    def _next_model(self):
         """Переключиться на следующую модель"""
-        self.current_model_index += 1
+        self.model_index += 1
+        log(f"🔄 Переключение на модель: {self._get_model()}")
     
     async def generate(
         self,
         prompt: str,
         max_tokens: int = None,
         temperature: float = None,
-        system_prompt: str = None,
-        prefer_free: bool = True
+        system: str = None
     ) -> Tuple[str, bool]:
-        """Генерация с автоматическим fallback"""
+        """Генерация ответа с автоматическим fallback"""
         
-        max_tokens = max_tokens or config.MAX_TOKENS_STANDARD
+        max_tokens = min(max_tokens or config.MAX_TOKENS_RESPONSE, 1000)
         temperature = temperature or config.TEMPERATURE
         
-        # Уменьшаем токены если в режиме экономии
-        if config.ECONOMY_MODE:
-            max_tokens = min(max_tokens, config.MAX_TOKENS_FREE)
-            stats.record_tokens_saved(config.MAX_TOKENS_ACTION - max_tokens)
-        
         messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt[:500]})
-        messages.append({"role": "user", "content": prompt[:config.MAX_CONTEXT_LENGTH]})
+        if system:
+            messages.append({"role": "system", "content": system[:500]})
+        messages.append({"role": "user", "content": prompt[:config.MAX_CONTEXT]})
         
         # Пробуем несколько моделей
-        attempts = 0
-        max_attempts = len(config.FREE_MODELS) + 1
-        
-        while attempts < max_attempts:
-            model = self._get_model(prefer_free)
+        for attempt in range(len(config.FREE_MODELS)):
+            model = self._get_model()
             
             try:
-                self.request_count += 1
-                stats.record_model_usage(model)
+                self.requests += 1
                 
                 response = self.client.chat.completions.create(
                     model=model,
@@ -564,71 +202,224 @@ class AIEngine:
                 )
                 
                 result = response.choices[0].message.content
-                logger.info(f"✅ Ответ от {model.split('/')[-1]}")
+                log(f"✅ Ответ от {model.split('/')[-1][:20]}")
                 return result, True
                 
             except Exception as e:
-                error_str = str(e)
-                logger.warning(f"⚠️ {model}: {error_str[:100]}")
+                error_msg = str(e)
+                log(f"⚠️ Ошибка {model.split('/')[-1][:15]}: {error_msg[:50]}", "WARN")
                 
-                # Если ошибка 402 (нет кредитов) - переключаемся
-                if "402" in error_str or "credits" in error_str.lower():
-                    self._rotate_model()
-                    attempts += 1
+                # Если ошибка с кредитами или лимитами - меняем модель
+                if any(x in error_msg.lower() for x in ['402', 'credit', 'limit', 'quota']):
+                    self._next_model()
                     continue
                 
-                # Другие ошибки
-                self.errors_count += 1
-                stats.record_error()
-                self._rotate_model()
-                attempts += 1
+                self.errors += 1
+                self._next_model()
         
-        return "⚠️ Все модели недоступны. Попробуйте позже.", False
+        return "⚠️ Временные проблемы с AI. Попробуйте позже.", False
     
     async def generate_short(self, prompt: str) -> Tuple[str, bool]:
-        """Короткий ответ для экономии токенов"""
-        return await self.generate(
-            prompt=prompt,
-            max_tokens=config.MAX_TOKENS_SHORT,
-            temperature=0.5
-        )
-    
-    async def generate_json(self, prompt: str) -> Tuple[Any, bool]:
-        """Генерация JSON"""
-        response, success = await self.generate(
-            prompt=prompt + "\n\nВерни ТОЛЬКО JSON!",
-            max_tokens=config.MAX_TOKENS_SHORT,
-            temperature=0.3
-        )
-        
-        if success:
-            try:
-                match = re.search(r'[\[\{].*[\]\}]', response, re.DOTALL)
-                if match:
-                    return json.loads(match.group()), True
-            except:
-                pass
-        
-        return None, False
+        """Короткий ответ"""
+        return await self.generate(prompt, max_tokens=config.MAX_TOKENS_SHORT)
 
-ai_engine = AIEngine()
+ai = AIClient()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# СИСТЕМА АГЕНТОВ - 20 СПЕЦИАЛИЗАЦИЙ
+# БАЗА ЗНАНИЙ О ЗАРАБОТКЕ
+# ═══════════════════════════════════════════════════════════════════════════
+
+class MoneyKnowledge:
+    """База знаний о способах заработка"""
+    
+    BUSINESS_MODELS = {
+        "freelance": {
+            "name": "🎨 Фриланс",
+            "income": "$500 - $10,000/мес",
+            "time": "1-4 недели",
+            "ai_help": "60%",
+            "platforms": ["Upwork", "Fiverr", "Kwork", "FL.ru"],
+            "steps": [
+                "Выбрать навык (копирайтинг, дизайн, код)",
+                "Создать портфолио с помощью AI",
+                "Зарегистрироваться на 3-5 платформах",
+                "Отправлять 10-20 откликов в день",
+                "Собирать отзывы, повышать цены"
+            ]
+        },
+        "affiliate": {
+            "name": "🔗 Партнёрский маркетинг",
+            "income": "$200 - $50,000/мес",
+            "time": "1-3 месяца",
+            "ai_help": "80%",
+            "platforms": ["Amazon", "Admitad", "CJ", "партнёрки инфопродуктов"],
+            "steps": [
+                "Выбрать нишу с высокими комиссиями",
+                "Создать Telegram канал или блог",
+                "Генерировать контент с AI",
+                "Вставлять партнёрские ссылки",
+                "Масштабировать трафик"
+            ]
+        },
+        "digital": {
+            "name": "📱 Цифровые продукты",
+            "income": "$100 - $100,000/мес",
+            "time": "2-8 недель",
+            "ai_help": "90%",
+            "platforms": ["Gumroad", "Notion", "Boosty", "GetCourse"],
+            "steps": [
+                "Найти боль аудитории",
+                "Создать продукт с AI (курс, гайд, шаблон)",
+                "Настроить продажу",
+                "Запустить трафик",
+                "Собирать отзывы и улучшать"
+            ]
+        },
+        "ai_services": {
+            "name": "🤖 AI-сервисы",
+            "income": "$1,000 - $50,000/мес",
+            "time": "1-4 недели",
+            "ai_help": "95%",
+            "platforms": ["Telegram боты", "Собственный сайт", "Fiverr"],
+            "steps": [
+                "Выбрать услугу (тексты, картинки, код)",
+                "Создать бота или лендинг",
+                "Настроить автоматизацию",
+                "Привлечь первых клиентов",
+                "Масштабировать"
+            ]
+        },
+        "content": {
+            "name": "📝 Контент-бизнес",
+            "income": "$100 - $100,000/мес",
+            "time": "3-12 месяцев",
+            "ai_help": "70%",
+            "platforms": ["YouTube", "Telegram", "TikTok", "Дзен"],
+            "steps": [
+                "Выбрать нишу и формат",
+                "Создать контент-план",
+                "Публиковать регулярно",
+                "Монетизировать (реклама, донаты)",
+                "Диверсифицировать доходы"
+            ]
+        },
+        "automation": {
+            "name": "⚙️ Автоматизация",
+            "income": "$2,000 - $30,000/мес",
+            "time": "2-4 недели",
+            "ai_help": "70%",
+            "platforms": ["Make", "Zapier", "n8n", "Telegram"],
+            "steps": [
+                "Изучить no-code инструменты",
+                "Найти бизнесы с рутинными процессами",
+                "Предложить автоматизацию",
+                "Создать решение",
+                "Брать абонентскую плату"
+            ]
+        },
+        "bots": {
+            "name": "🤖 Telegram-боты",
+            "income": "$500 - $20,000/мес",
+            "time": "1-2 недели",
+            "ai_help": "80%",
+            "platforms": ["Telegram", "Python/aiogram"],
+            "steps": [
+                "Изучить aiogram (с помощью AI)",
+                "Найти идею бота",
+                "Разработать MVP",
+                "Найти клиентов",
+                "Масштабировать"
+            ]
+        },
+        "dropshipping": {
+            "name": "📦 Дропшиппинг",
+            "income": "$500 - $30,000/мес",
+            "time": "2-6 недель",
+            "ai_help": "50%",
+            "platforms": ["Wildberries", "Ozon", "Shopify"],
+            "steps": [
+                "Найти winning product",
+                "Найти поставщика",
+                "Создать магазин/карточку",
+                "Настроить рекламу",
+                "Масштабировать"
+            ]
+        }
+    }
+    
+    QUICK_WINS = [
+        {"name": "AI-копирайтинг на Kwork", "income": "$300-1000/мес", "time": "3-7 дней"},
+        {"name": "Telegram-бот на заказ", "income": "$500-3000/проект", "time": "1-2 недели"},
+        {"name": "Notion-шаблоны", "income": "$100-5000/мес", "time": "1 неделя"},
+        {"name": "AI-дизайн (Midjourney)", "income": "$500-2000/мес", "time": "1 неделя"},
+        {"name": "AI-консультации", "income": "$1000-5000/мес", "time": "Сразу"},
+    ]
+    
+    HOT_NICHES = [
+        {"niche": "AI-инструменты для бизнеса", "trend": "🔥🔥🔥"},
+        {"niche": "Автоматизация с n8n/Make", "trend": "🔥🔥🔥"},
+        {"niche": "Микро-SaaS", "trend": "🔥🔥🔥"},
+        {"niche": "Telegram-боты", "trend": "🔥🔥"},
+        {"niche": "No-code разработка", "trend": "🔥🔥"},
+        {"niche": "AI-контент", "trend": "🔥🔥"},
+        {"niche": "Образовательные продукты", "trend": "🔥🔥"},
+    ]
+    
+    @classmethod
+    def get_model_info(cls, key: str) -> str:
+        """Получить информацию о бизнес-модели"""
+        data = cls.BUSINESS_MODELS.get(key)
+        if not data:
+            return "Модель не найдена"
+        
+        steps = "\n".join([f"  {i+1}. {s}" for i, s in enumerate(data['steps'])])
+        platforms = ", ".join(data['platforms'])
+        
+        return f"""{data['name']}
+
+💵 Доход: {data['income']}
+⏱ До результата: {data['time']}
+🤖 AI помогает: {data['ai_help']}
+
+📋 *Шаги:*
+{steps}
+
+🌐 *Платформы:* {platforms}"""
+    
+    @classmethod
+    def get_all_models_short(cls) -> str:
+        """Краткий список всех моделей"""
+        text = "💰 *СПОСОБЫ ЗАРАБОТКА:*\n\n"
+        for key, data in cls.BUSINESS_MODELS.items():
+            text += f"{data['name']}\n"
+            text += f"  💵 {data['income']} | ⏱ {data['time']}\n\n"
+        return text
+    
+    @classmethod
+    def get_quick_wins(cls) -> str:
+        """Быстрые победы"""
+        text = "⚡ *БЫСТРЫЙ СТАРТ (деньги за неделю):*\n\n"
+        for i, qw in enumerate(cls.QUICK_WINS, 1):
+            text += f"*{i}. {qw['name']}*\n"
+            text += f"   💰 {qw['income']} | ⏱ {qw['time']}\n\n"
+        return text
+    
+    @classmethod
+    def get_niches(cls) -> str:
+        """Горячие ниши"""
+        text = "🔥 *ГОРЯЧИЕ НИШИ 2024-2025:*\n\n"
+        for n in cls.HOT_NICHES:
+            text += f"• {n['niche']} {n['trend']}\n"
+        return text
+
+# ═══════════════════════════════════════════════════════════════════════════
+# СИСТЕМА АГЕНТОВ
 # ═══════════════════════════════════════════════════════════════════════════
 
 class Agent:
-    """Агент с оптимизированными промптами"""
+    """AI Агент"""
     
-    def __init__(
-        self,
-        agent_type: AgentType,
-        name: str,
-        emoji: str,
-        specialty: str,
-        keywords: List[str]
-    ):
-        self.agent_type = agent_type
+    def __init__(self, name: str, emoji: str, specialty: str, keywords: List[str]):
         self.name = name
         self.emoji = emoji
         self.specialty = specialty
@@ -636,156 +427,88 @@ class Agent:
         self.calls = 0
     
     @property
-    def display_name(self) -> str:
+    def display(self) -> str:
         return f"{self.emoji} {self.name}"
     
-    def matches(self, query: str) -> float:
-        """Оценка соответствия запросу"""
+    def relevance(self, query: str) -> float:
+        """Оценка релевантности для запроса"""
         q = query.lower()
         matches = sum(1 for kw in self.keywords if kw in q)
         return min(matches / max(len(self.keywords) * 0.3, 1), 1.0)
     
-    async def analyze(self, task: str, context: str = "") -> Tuple[str, bool]:
-        """Анализ задачи - ОПТИМИЗИРОВАННЫЙ ПРОМПТ"""
-        
+    async def think(self, task: str, context: str = "") -> Tuple[str, bool]:
+        """Анализ задачи"""
         self.calls += 1
-        stats.record_agent(self.name)
         
-        # Короткий системный промпт для экономии токенов
-        system = f"Ты {self.name} - {self.specialty}. Отвечай кратко, по делу, с цифрами."
+        system = f"Ты {self.name} - {self.specialty}. Отвечай кратко, конкретно, с цифрами."
         
         prompt = f"""Задача: {task}
+{f'Контекст: {context[:300]}' if context else ''}
 
-{'Контекст: ' + context[:300] if context else ''}
-
-Дай конкретный ответ с:
-- Цифрами и примерами
+Дай ответ с:
+- Конкретными цифрами
 - Способами заработка
-- Конкретными шагами"""
+- Первым шагом"""
         
-        return await ai_engine.generate(
-            prompt=prompt,
-            system_prompt=system,
-            max_tokens=config.MAX_TOKENS_STANDARD
-        )
+        return await ai.generate(prompt, system=system)
 
-class AgentSwarm:
-    """Рой из 20 агентов"""
+class Swarm:
+    """Рой агентов"""
     
     def __init__(self):
-        self.agents: Dict[AgentType, Agent] = {}
-        self._init_agents()
+        self.agents: Dict[str, Agent] = {}
+        self._init()
     
-    def _init_agents(self):
-        """Инициализация всех агентов"""
-        
+    def _init(self):
+        """Инициализация агентов"""
         agents_data = [
-            # Основные
-            (AgentType.RESEARCHER, "Исследователь", "🔬", 
-             "анализ рынков и трендов", 
+            ("researcher", "Исследователь", "🔬", "анализ рынков и трендов",
              ["анализ", "исследование", "тренд", "рынок", "статистика"]),
             
-            (AgentType.MONEY_EXPERT, "Эксперт заработка", "💰",
-             "монетизация и доход",
+            ("money", "Эксперт заработка", "💰", "монетизация и доход",
              ["заработок", "деньги", "доход", "монетизация", "прибыль"]),
             
-            (AgentType.STRATEGIST, "Стратег", "🏗️",
-             "стратегии и планирование",
-             ["план", "стратегия", "roadmap", "масштаб", "развитие"]),
+            ("strategist", "Стратег", "🏗️", "стратегии и планирование",
+             ["план", "стратегия", "roadmap", "масштаб", "этап"]),
             
-            (AgentType.CONTENT_CREATOR, "Контент-мейкер", "✍️",
-             "создание контента",
+            ("content", "Контент-мейкер", "✍️", "создание контента",
              ["контент", "текст", "пост", "статья", "копирайт"]),
             
-            (AgentType.CODER, "Кодер", "💻",
-             "программирование и автоматизация",
+            ("coder", "Кодер", "💻", "программирование и боты",
              ["код", "программа", "бот", "скрипт", "python", "автоматизация"]),
             
-            (AgentType.MARKETER, "Маркетолог", "📢",
-             "маркетинг и продвижение",
+            ("marketer", "Маркетолог", "📢", "маркетинг и продвижение",
              ["маркетинг", "реклама", "продвижение", "таргет", "трафик"]),
             
-            # Специализированные для заработка
-            (AgentType.DROPSHIPPER, "Дропшиппер", "📦",
-             "дропшиппинг и e-commerce",
-             ["дропшиппинг", "товар", "поставщик", "магазин", "wildberries", "ozon"]),
-            
-            (AgentType.AFFILIATE, "Партнёрщик", "🔗",
-             "партнёрский маркетинг",
-             ["партнёрка", "affiliate", "реферал", "ссылка", "комиссия"]),
-            
-            (AgentType.FREELANCER, "Фрилансер", "🎯",
-             "фриланс и услуги",
+            ("freelancer", "Фрилансер", "🎯", "фриланс и услуги",
              ["фриланс", "заказ", "клиент", "услуга", "kwork", "fiverr"]),
             
-            (AgentType.CRYPTO_EXPERT, "Крипто-эксперт", "🪙",
-             "криптовалюты и web3",
-             ["крипто", "биткоин", "блокчейн", "nft", "web3", "токен"]),
+            ("affiliate", "Партнёрщик", "🔗", "партнёрский маркетинг",
+             ["партнёрка", "affiliate", "реферал", "комиссия"]),
             
-            (AgentType.ECOMMERCE, "E-commerce", "🛒",
-             "интернет-торговля",
-             ["магазин", "товар", "продажа", "маркетплейс", "склад"]),
-            
-            (AgentType.SAAS_EXPERT, "SaaS-эксперт", "☁️",
-             "SaaS и подписочные модели",
-             ["saas", "подписка", "сервис", "приложение", "стартап"]),
-            
-            # Аналитика и креатив
-            (AgentType.DATA_ANALYST, "Аналитик данных", "📊",
-             "аналитика и метрики",
-             ["данные", "метрика", "аналитика", "kpi", "отчёт"]),
-            
-            (AgentType.CREATIVE_DIRECTOR, "Креативщик", "🎨",
-             "креатив и идеи",
-             ["идея", "креатив", "бренд", "концепция", "уникальный"]),
-            
-            (AgentType.COPYWRITER, "Копирайтер", "📝",
-             "продающие тексты",
-             ["текст", "продающий", "заголовок", "письмо", "лендинг"]),
-            
-            (AgentType.SEO_EXPERT, "SEO-эксперт", "🔍",
-             "поисковая оптимизация",
-             ["seo", "поиск", "google", "ключевые", "оптимизация"]),
-            
-            # Специалисты
-            (AgentType.INVESTOR, "Инвестор", "📈",
-             "инвестиции и финансы",
-             ["инвестиция", "вложение", "актив", "портфель", "риск"]),
-            
-            (AgentType.AUTOMATION, "Автоматизатор", "⚙️",
-             "автоматизация процессов",
+            ("automation", "Автоматизатор", "⚙️", "автоматизация процессов",
              ["автоматизация", "интеграция", "zapier", "make", "n8n"]),
             
-            (AgentType.COACH, "Коуч", "🎯",
-             "мотивация и развитие",
+            ("coach", "Коуч", "🎯", "мотивация и развитие",
              ["мотивация", "цель", "рост", "привычка", "продуктивность"]),
-            
-            (AgentType.LEGAL, "Юрист", "⚖️",
-             "правовые вопросы",
-             ["закон", "договор", "право", "налог", "юридический"]),
         ]
         
-        for data in agents_data:
-            agent = Agent(*data)
-            self.agents[data[0]] = agent
+        for key, name, emoji, specialty, keywords in agents_data:
+            self.agents[key] = Agent(name, emoji, specialty, keywords)
         
-        logger.info(f"✅ Загружено {len(self.agents)} агентов")
+        log(f"✅ Загружено {len(self.agents)} агентов")
     
-    def select_for_query(self, query: str, max_agents: int = None) -> List[Agent]:
-        """Умный выбор агентов"""
-        max_agents = max_agents or config.MAX_AGENTS_PER_QUERY
+    def select(self, query: str, max_agents: int = None) -> List[Agent]:
+        """Выбор релевантных агентов"""
+        max_agents = max_agents or config.MAX_AGENTS
         
         # Оценка каждого агента
-        scored = [(agent, agent.matches(query)) for agent in self.agents.values()]
+        scored = [(a, a.relevance(query)) for a in self.agents.values()]
         scored.sort(key=lambda x: x[1], reverse=True)
         
-        # Обязательные агенты
-        must_have = {AgentType.MONEY_EXPERT, AgentType.RESEARCHER}
-        selected = []
-        
-        for agent_type in must_have:
-            if agent_type in self.agents:
-                selected.append(self.agents[agent_type])
+        # Обязательно включаем money и researcher
+        must_have = ["money", "researcher"]
+        selected = [self.agents[k] for k in must_have if k in self.agents]
         
         # Добавляем релевантных
         for agent, score in scored:
@@ -796,410 +519,295 @@ class AgentSwarm:
         
         return selected[:max_agents]
     
-    async def think_together(
-        self,
-        query: str,
-        context: str = ""
-    ) -> List[Tuple[str, str, bool]]:
+    async def think(self, query: str, context: str = "") -> List[Tuple[str, str, bool]]:
         """Коллективное мышление"""
+        agents = self.select(query)
         
-        agents = self.select_for_query(query)
+        results = []
+        for agent in agents:
+            response, success = await agent.think(query, context)
+            results.append((agent.display, response, success))
         
-        tasks = [agent.analyze(query, context) for agent in agents]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        responses = []
-        for agent, result in zip(agents, results):
-            if isinstance(result, Exception):
-                responses.append((agent.display_name, f"Ошибка: {result}", False))
-            else:
-                text, success = result
-                responses.append((agent.display_name, text, success))
-        
-        return responses
+        return results
 
-swarm = AgentSwarm()
+swarm = Swarm()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# СИНТЕЗАТОР ОТВЕТОВ - ОПТИМИЗИРОВАННЫЙ
+# СИНТЕЗАТОР
 # ═══════════════════════════════════════════════════════════════════════════
 
-class ResponseSynthesizer:
-    """Синтезатор с экономией токенов"""
+async def synthesize(query: str, responses: List[Tuple[str, str, bool]]) -> str:
+    """Синтез ответов агентов"""
     
-    @staticmethod
-    async def synthesize(
-        query: str,
-        agent_responses: List[Tuple[str, str, bool]],
-        user_profile: UserProfile = None
-    ) -> str:
-        """Синтез ответов в единый"""
-        
-        # Собираем успешные ответы
-        valid_responses = [
-            f"[{name}]: {text[:400]}"
-            for name, text, success in agent_responses if success
-        ]
-        
-        if not valid_responses:
-            return "⚠️ Не удалось получить ответы от агентов. Попробуйте переформулировать вопрос."
-        
-        agents_input = "\n\n".join(valid_responses)
-        
-        # Короткий промпт для синтеза
-        prompt = f"""Объедини ответы экспертов в полезный ответ.
+    valid = [(name, text) for name, text, ok in responses if ok]
+    
+    if not valid:
+        return "⚠️ Не удалось получить ответы. Попробуйте переформулировать вопрос."
+    
+    agents_text = "\n\n".join([f"[{name}]: {text[:350]}" for name, text in valid])
+    
+    prompt = f"""Объедини ответы экспертов в полезный ответ.
 
 ВОПРОС: {query}
 
-ОТВЕТЫ ЭКСПЕРТОВ:
-{agents_input}
+ЭКСПЕРТЫ:
+{agents_text}
 
-ФОРМАТ ОТВЕТА:
+ФОРМАТ:
 
 🧠 *СУТЬ* (2-3 предложения)
 
 💰 *КАК ЗАРАБОТАТЬ:*
 
 *1. [Способ]* - $X/мес
-• Делаем: ...
+• Что делать
 • AI помогает: X%
 • Шаги: 1, 2, 3
 
 *2. [Способ]* - $X/мес
-• Делаем: ...
-
-*3. [Способ]* - $X/мес
-• Делаем: ...
+[аналогично]
 
 🎯 *НАЧНИ СЕЙЧАС:* [конкретное действие]
 
-Кратко и по делу!"""
-        
-        response, success = await ai_engine.generate(
-            prompt=prompt,
-            max_tokens=config.MAX_TOKENS_FREE
-        )
-        
-        if not success:
-            # Fallback - простое объединение
-            return "\n\n---\n\n".join([
-                f"{name}:\n{text[:500]}"
-                for name, text, s in agent_responses if s
-            ])
-        
-        return response
+Кратко!"""
+    
+    result, success = await ai.generate(prompt)
+    
+    if not success:
+        # Fallback
+        return "\n\n---\n\n".join([f"{name}:\n{text[:400]}" for name, text in valid])
+    
+    return result
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ГЕНЕРАТОР ДЕЙСТВИЙ
 # ═══════════════════════════════════════════════════════════════════════════
 
-class ActionGenerator:
-    """Генератор автоматических действий"""
+def generate_actions(query: str) -> List[Dict]:
+    """Генерация действий на основе запроса"""
+    actions = []
+    q = query.lower()
     
-    ACTION_TEMPLATES = {
-        "create_content": ("✍️", "Создать контент"),
-        "create_code": ("💻", "Написать код"),
-        "create_plan": ("📋", "Составить план"),
-        "create_template": ("📄", "Создать шаблон"),
-        "brainstorm": ("💡", "Генерировать идеи"),
-        "analyze": ("📊", "Провести анализ"),
-        "find_niches": ("🔍", "Найти ниши"),
-        "calculate_income": ("🧮", "Рассчитать доход"),
+    if any(w in q for w in ["контент", "текст", "пост"]):
+        actions.append({
+            "type": "content",
+            "name": "✍️ Создать контент",
+            "desc": f"Контент по теме: {query[:40]}"
+        })
+    
+    if any(w in q for w in ["код", "бот", "скрипт", "программ"]):
+        actions.append({
+            "type": "code",
+            "name": "💻 Написать код",
+            "desc": f"Код: {query[:40]}"
+        })
+    
+    if any(w in q for w in ["план", "стратегия", "как начать"]):
+        actions.append({
+            "type": "plan",
+            "name": "📋 Пошаговый план",
+            "desc": f"План: {query[:40]}"
+        })
+    
+    if any(w in q for w in ["идея", "ниша", "что делать"]):
+        actions.append({
+            "type": "ideas",
+            "name": "💡 10 идей",
+            "desc": f"Идеи: {query[:40]}"
+        })
+    
+    if any(w in q for w in ["заработ", "доход", "деньги"]):
+        actions.append({
+            "type": "calc",
+            "name": "🧮 Расчёт дохода",
+            "desc": "Калькулятор потенциального дохода"
+        })
+    
+    # Дефолтные
+    if not actions:
+        actions = [
+            {"type": "plan", "name": "📋 План действий", "desc": f"План: {query[:40]}"},
+            {"type": "ideas", "name": "💡 Идеи", "desc": "Генерация идей"}
+        ]
+    
+    return actions[:config.MAX_ACTIONS]
+
+async def execute_action(action: Dict, context: str) -> str:
+    """Выполнение действия"""
+    
+    action_type = action.get("type", "plan")
+    desc = action.get("desc", "")
+    
+    prompts = {
+        "content": f"Создай готовый контент для публикации: {desc}\n\nВключи заголовок, текст 300-500 слов, призыв к действию, хештеги.",
+        
+        "code": f"Напиши рабочий Python код: {desc}\n\nТребования: рабочий код, комментарии, обработка ошибок.",
+        
+        "plan": f"Создай пошаговый план: {desc}\n\nФормат:\n📅 ДЕНЬ 1-7: шаги\n📅 НЕДЕЛЯ 2-4: шаги\n💰 Ожидаемый доход",
+        
+        "ideas": f"Сгенерируй 10 идей: {desc}\n\nДля каждой: название, потенциал $X/мес, первый шаг",
+        
+        "calc": f"Рассчитай потенциальный доход: {desc}\n\nБазовый сценарий, оптимистичный, консервативный"
     }
     
-    @classmethod
-    async def generate(cls, query: str, analysis: str) -> List[Dict]:
-        """Генерация действий"""
-        
-        # Быстрая генерация без AI для экономии
-        actions = []
-        q = query.lower()
-        
-        if any(w in q for w in ["контент", "текст", "пост"]):
-            actions.append({
-                "type": "create_content",
-                "name": "✍️ Создать контент",
-                "description": f"Готовый контент по теме: {query[:50]}"
-            })
-        
-        if any(w in q for w in ["код", "бот", "скрипт", "автоматизация"]):
-            actions.append({
-                "type": "create_code",
-                "name": "💻 Написать код",
-                "description": f"Рабочий код: {query[:50]}"
-            })
-        
-        if any(w in q for w in ["план", "стратегия", "как начать"]):
-            actions.append({
-                "type": "create_plan",
-                "name": "📋 Пошаговый план",
-                "description": f"Детальный план: {query[:50]}"
-            })
-        
-        if any(w in q for w in ["идея", "ниша", "что делать"]):
-            actions.append({
-                "type": "brainstorm",
-                "name": "💡 10 идей",
-                "description": f"Идеи для заработка: {query[:50]}"
-            })
-        
-        if any(w in q for w in ["заработ", "доход", "деньги"]):
-            actions.append({
-                "type": "calculate_income",
-                "name": "🧮 Расчёт дохода",
-                "description": "Калькулятор потенциального дохода"
-            })
-        
-        # Дефолтные действия если ничего не подошло
-        if not actions:
-            actions = [
-                {
-                    "type": "create_plan",
-                    "name": "📋 План действий",
-                    "description": f"План по теме: {query[:50]}"
-                },
-                {
-                    "type": "brainstorm",
-                    "name": "💡 Идеи",
-                    "description": "Генерация идей"
-                }
-            ]
-        
-        return actions[:config.MAX_ACTIONS_PER_RESPONSE]
+    prompt = prompts.get(action_type, prompts["plan"])
+    prompt += f"\n\nКонтекст: {context[:400]}"
     
-    @classmethod
-    async def execute(cls, action: Dict, context: str) -> str:
-        """Выполнение действия"""
-        
-        action_type = action.get("type", "create_plan")
-        desc = action.get("description", "")
-        
-        prompts = {
-            "create_content": f"""Создай готовый контент: {desc}
-
-Включи:
-- Заголовок
-- Основной текст (300-500 слов)
-- Призыв к действию
-- Хештеги
-
-Контент должен быть готов к публикации!""",
-
-            "create_code": f"""Напиши рабочий Python код: {desc}
-
-Требования:
-- Полностью рабочий код
-- Комментарии на русском
-- Обработка ошибок
-- Пример использования""",
-
-            "create_plan": f"""Создай пошаговый план: {desc}
-
-Формат:
-📅 ДЕНЬ 1-7:
-• Конкретные действия
-• Ожидаемые результаты
-
-📅 НЕДЕЛЯ 2-4:
-• Следующие шаги
-• Метрики успеха
-
-💰 Ожидаемый доход: $X/мес""",
-
-            "brainstorm": f"""Сгенерируй 10 идей: {desc}
-
-Для каждой идеи:
-1. [Название]
-   💰 Потенциал: $X/мес
-   ⏱ Время до результата
-   🎯 Первый шаг""",
-
-            "calculate_income": f"""Рассчитай потенциальный доход: {desc}
-
-КАЛЬКУЛЯТОР ДОХОДА:
-
-📊 Базовый сценарий:
-• Часов в неделю: X
-• Ставка/цена: $X
-• Доход: $X/мес
-
-📈 Оптимистичный:
-• При масштабировании: $X/мес
-
-⚠️ Консервативный:
-• Минимум: $X/мес
-
-🎯 Рекомендация: ...""",
-
-            "analyze": f"""Проведи анализ: {desc}
-
-SWOT:
-✅ Сильные стороны:
-❌ Слабые стороны:
-🚀 Возможности:
-⚠️ Угрозы:
-
-📊 Вывод: ...""",
-        }
-        
-        prompt = prompts.get(action_type, prompts["create_plan"])
-        prompt += f"\n\nКонтекст: {context[:500]}"
-        
-        response, success = await ai_engine.generate(
-            prompt=prompt,
-            max_tokens=config.MAX_TOKENS_ACTION
-        )
-        
-        if success:
-            stats.record_task()
-        
-        return response
+    result, _ = await ai.generate(prompt, max_tokens=config.MAX_TOKENS_ACTION)
+    return result
 
 # ═══════════════════════════════════════════════════════════════════════════
-# ГЛАВНЫЙ МОЗГ
+# МОЗГ
 # ═══════════════════════════════════════════════════════════════════════════
 
-class DeepThinkBrain:
+class Brain:
     """Главный мозг системы"""
     
     def __init__(self):
-        self.knowledge = MoneyKnowledgeBase()
-        self.synthesizer = ResponseSynthesizer()
-        self.action_gen = ActionGenerator()
+        self.queries = 0
+        self.tasks = 0
     
-    async def think(
-        self,
-        query: str,
-        context: ConversationContext = None,
-        user_profile: UserProfile = None
-    ) -> Dict:
+    async def think(self, query: str, context: str = "") -> Dict:
         """Глубокий анализ"""
         
         import time
         start = time.time()
         
-        stats.record_query(self._detect_topic(query))
+        self.queries += 1
         
-        # Контекст разговора
-        ctx_summary = context.get_summary() if context else ""
-        
-        # Коллективное мышление агентов
-        responses = await swarm.think_together(query, ctx_summary)
+        # Коллективное мышление
+        responses = await swarm.think(query, context)
         
         # Синтез
-        synthesis = await self.synthesizer.synthesize(
-            query, responses, user_profile
-        )
+        synthesis = await synthesize(query, responses)
         
-        # Генерация действий
-        actions = await self.action_gen.generate(query, synthesis)
+        # Действия
+        actions = generate_actions(query)
         
         # Агенты которые работали
-        agents_used = [name for name, _, success in responses if success]
-        
-        total_time = time.time() - start
+        agents_used = [name for name, _, ok in responses if ok]
         
         return {
             "response": synthesis,
-            "agents": agents_used[:4],
+            "agents": agents_used,
             "actions": actions,
-            "time": total_time
+            "time": time.time() - start
         }
-    
-    def _detect_topic(self, query: str) -> str:
-        """Определение темы"""
-        q = query.lower()
-        if any(w in q for w in ["заработ", "деньги", "доход"]):
-            return "money"
-        if any(w in q for w in ["код", "бот", "программ"]):
-            return "tech"
-        if any(w in q for w in ["контент", "текст"]):
-            return "content"
-        if any(w in q for w in ["маркетинг", "реклама"]):
-            return "marketing"
-        return "general"
 
-brain = DeepThinkBrain()
+brain = Brain()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# МЕНЕДЖЕР ПОЛЬЗОВАТЕЛЕЙ
+# ХРАНИЛИЩЕ ДАННЫХ
 # ═══════════════════════════════════════════════════════════════════════════
 
-class UserManager:
-    """Менеджер пользователей"""
+class Storage:
+    """Хранилище данных пользователей"""
     
     def __init__(self):
-        self.profiles: Dict[int, UserProfile] = {}
-        self.contexts: Dict[int, ConversationContext] = {}
+        self.contexts: Dict[int, Dict] = {}
+        self.pending_actions: Dict[str, Dict] = {}
     
-    def get_profile(self, user_data: Dict) -> UserProfile:
-        uid = user_data.get("id")
-        if uid not in self.profiles:
-            self.profiles[uid] = UserProfile(
-                user_id=uid,
-                username=user_data.get("username", ""),
-                first_name=user_data.get("first_name", "User")
-            )
-        profile = self.profiles[uid]
-        profile.last_active = datetime.now()
-        return profile
-    
-    def get_context(self, user_id: int) -> ConversationContext:
+    def get_context(self, user_id: int) -> Dict:
         if user_id not in self.contexts:
-            self.contexts[user_id] = ConversationContext(user_id=user_id)
+            self.contexts[user_id] = {
+                "messages": [],
+                "last_query": "",
+                "last_response": "",
+                "queries": 0
+            }
         return self.contexts[user_id]
+    
+    def add_message(self, user_id: int, role: str, content: str):
+        ctx = self.get_context(user_id)
+        ctx["messages"].append({"role": role, "content": content[:300]})
+        if len(ctx["messages"]) > config.MAX_HISTORY:
+            ctx["messages"] = ctx["messages"][-config.MAX_HISTORY:]
+    
+    def get_summary(self, user_id: int) -> str:
+        ctx = self.get_context(user_id)
+        if not ctx["messages"]:
+            return ""
+        recent = ctx["messages"][-3:]
+        return "\n".join([f"{m['role']}: {m['content'][:100]}" for m in recent])
 
-user_manager = UserManager()
+storage = Storage()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# СТАТИСТИКА
+# ═══════════════════════════════════════════════════════════════════════════
+
+class Stats:
+    """Статистика"""
+    
+    def __init__(self):
+        self.start_time = datetime.now()
+        self.queries = 0
+        self.tasks = 0
+        self.errors = 0
+    
+    def get_summary(self) -> str:
+        uptime = datetime.now() - self.start_time
+        hours = uptime.total_seconds() / 3600
+        
+        return f"""📊 *СТАТИСТИКА*
+
+⏱ Время работы: {hours:.1f}ч
+💬 Запросов: {self.queries}
+✅ Задач: {self.tasks}
+❌ Ошибок: {self.errors}
+🤖 Агентов: {len(swarm.agents)}
+🔧 Модель: {ai._get_model().split('/')[-1][:25]}
+📡 AI запросов: {ai.requests}"""
+
+stats = Stats()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TELEGRAM BOT
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TelegramBot:
-    """Telegram бот с расширенным функционалом"""
+class Bot:
+    """Telegram бот"""
     
     def __init__(self):
         self.api = config.TELEGRAM_API
-        self.pending_actions: Dict[str, Dict] = {}
     
-    async def send(
-        self,
-        chat_id: int,
-        text: str,
-        buttons: Dict = None,
-        parse_mode: str = "Markdown"
-    ):
+    async def send(self, chat_id: int, text: str, buttons: Dict = None):
         """Отправка сообщения"""
         async with httpx.AsyncClient(timeout=config.API_TIMEOUT) as client:
             data = {"chat_id": chat_id, "text": text[:4096]}
             
-            if parse_mode:
-                data["parse_mode"] = parse_mode
             if buttons:
                 data["reply_markup"] = json.dumps(buttons)
             
+            # Пробуем с Markdown
+            data["parse_mode"] = "Markdown"
+            
+            try:
+                resp = await client.post(f"{self.api}/sendMessage", json=data)
+                if resp.status_code == 200:
+                    return
+            except:
+                pass
+            
+            # Без форматирования
+            data.pop("parse_mode", None)
             try:
                 await client.post(f"{self.api}/sendMessage", json=data)
-            except:
-                # Без форматирования
-                data.pop("parse_mode", None)
-                try:
-                    await client.post(f"{self.api}/sendMessage", json=data)
-                except Exception as e:
-                    logger.error(f"Send error: {e}")
+            except Exception as e:
+                log(f"Send error: {e}", "ERROR")
     
-    async def answer_callback(self, callback_id: str, text: str = None):
+    async def answer_callback(self, callback_id: str):
         """Ответ на callback"""
         async with httpx.AsyncClient(timeout=10) as client:
             try:
                 await client.post(
                     f"{self.api}/answerCallbackQuery",
-                    json={"callback_query_id": callback_id, "text": text}
+                    json={"callback_query_id": callback_id}
                 )
             except:
                 pass
     
-    async def send_typing(self, chat_id: int):
+    async def typing(self, chat_id: int):
         """Статус печатает"""
         async with httpx.AsyncClient(timeout=5) as client:
             try:
@@ -1214,26 +822,20 @@ class TelegramBot:
         """Создание кнопок"""
         keyboard = []
         
-        for i, action in enumerate(actions[:5]):
+        for i, action in enumerate(actions[:4]):
             keyboard.append([{
-                "text": action.get("name", "🤖 Действие")[:30],
+                "text": action.get("name", "🤖 Действие")[:28],
                 "callback_data": f"act_{i}_{user_id}"
             }])
         
-        # Дополнительные кнопки
         keyboard.append([
             {"text": "💰 Способы заработка", "callback_data": f"income_{user_id}"},
-            {"text": "🔥 Горячие ниши", "callback_data": f"niches_{user_id}"}
+            {"text": "🔥 Ниши", "callback_data": f"niches_{user_id}"}
         ])
         
         keyboard.append([
-            {"text": "⚡ Быстрый старт", "callback_data": f"quickwin_{user_id}"},
+            {"text": "⚡ Быстрый старт", "callback_data": f"quick_{user_id}"},
             {"text": "📊 Статистика", "callback_data": f"stats_{user_id}"}
-        ])
-        
-        keyboard.append([
-            {"text": "⚙️ Настройки", "callback_data": f"settings_{user_id}"},
-            {"text": "❓ Помощь", "callback_data": f"help_{user_id}"}
         ])
         
         return {"inline_keyboard": keyboard}
@@ -1242,325 +844,187 @@ class TelegramBot:
     # КОМАНДЫ
     # ═══════════════════════════════════════════════════════════════
     
-    async def cmd_start(self, chat_id: int, user_data: Dict):
+    async def cmd_start(self, chat_id: int, user_name: str):
         """Команда /start"""
-        profile = user_manager.get_profile(user_data)
-        
         text = f"""🧠 *DEEPTHINK AUTOHUSTLE v3.0*
-_Ultimate Money Edition_
 
-Привет, {profile.first_name}! 👋
+Привет, {user_name}! 👋
 
 Я - AI-система для поиска способов заработка.
 
-🤖 *{len(swarm.agents)} АГЕНТОВ:*
-• Эксперт заработка, Стратег, Маркетолог
-• Кодер, Копирайтер, SEO-специалист
-• Криптоэксперт, SaaS-эксперт и другие
+🤖 *{len(swarm.agents)} АГЕНТОВ* анализируют твои запросы
 
-💰 *ЧТО Я УМЕЮ:*
-• Найти способы заработка под тебя
-• Создать бизнес-план за минуты
-• Написать код, контент, стратегию
+💰 *Я ПОМОГУ:*
+• Найти способ заработка под тебя
+• Создать план действий
+• Написать код или контент
 • Рассчитать потенциальный доход
 
-🚀 *БЫСТРЫЙ СТАРТ:*
+🚀 *ПРИМЕРЫ:*
 • "Как заработать на AI?"
-• "Создай Telegram-бота для бизнеса"
-• "Топ ниши 2025 для новичка"
-• "План заработка $1000/мес"
+• "Создай Telegram-бота"
+• "Топ ниши 2025"
+• "План на $1000/мес"
 
-💡 Просто напиши свой вопрос!
+📖 /help - все команды
 
-/help - все команды
-/income - способы заработка
-/niches - горячие ниши"""
+💡 Просто напиши свой вопрос!"""
         
         await self.send(chat_id, text)
     
     async def cmd_help(self, chat_id: int):
         """Команда /help"""
-        text = """📖 *КОМАНДЫ DEEPTHINK v3.0*
+        text = """📖 *КОМАНДЫ:*
 
-*ОСНОВНЫЕ:*
-/start - Начало работы
-/help - Эта справка
+*Основные:*
+/start - Начало
+/help - Справка
 
-*ЗАРАБОТОК:*
-/income - 8 способов заработка
-/niches - Горячие ниши 2024-2025
-/quickwin - Быстрые победы (деньги за неделю)
-/calc - Калькулятор дохода
+*Заработок:*
+/income - Способы заработка
+/niches - Горячие ниши
+/quick - Быстрый старт
 
-*СОЗДАНИЕ:*
-/plan [тема] - Бизнес-план
-/content [тема] - Готовый контент
-/code [описание] - Написать код
-/ideas [тема] - 10 идей
+*Система:*
+/stats - Статистика
+/agents - Агенты
 
-*СИСТЕМА:*
-/stats - Статистика бота
-/agents - Список агентов
-/settings - Настройки
-/mode - Переключить режим экономии
-
-*СОВЕТЫ:*
-✅ Чем конкретнее запрос - тем лучше ответ
-✅ Указывай бюджет, сроки, цели
-✅ Используй кнопки для действий"""
+💡 Или просто напиши вопрос!"""
         
         await self.send(chat_id, text)
     
     async def cmd_income(self, chat_id: int):
         """Способы заработка"""
-        text = "💰 *8 СПОСОБОВ ЗАРАБОТКА С AI*\n\n"
-        
-        for model, data in MoneyKnowledgeBase.INCOME_STREAMS.items():
-            text += f"*{data['name']}*\n"
-            text += f"💵 {data['income_range']}\n"
-            text += f"⏱ {data['time_to_profit']}\n"
-            text += f"🤖 AI: {data['ai_automation']}\n\n"
-        
-        text += "_Нажми на кнопку для подробностей_"
+        text = MoneyKnowledge.get_all_models_short()
         
         buttons = {"inline_keyboard": [
             [{"text": "🎨 Фриланс", "callback_data": "bm_freelance"}],
             [{"text": "🔗 Партнёрки", "callback_data": "bm_affiliate"}],
-            [{"text": "📦 Дропшиппинг", "callback_data": "bm_dropshipping"}],
             [{"text": "📱 Цифровые продукты", "callback_data": "bm_digital"}],
-            [{"text": "☁️ SaaS", "callback_data": "bm_saas"}],
-            [{"text": "🤖 AI-сервисы", "callback_data": "bm_ai"}],
+            [{"text": "🤖 AI-сервисы", "callback_data": "bm_ai_services"}],
+            [{"text": "📝 Контент", "callback_data": "bm_content"}],
+            [{"text": "⚙️ Автоматизация", "callback_data": "bm_automation"}],
+            [{"text": "🤖 Telegram-боты", "callback_data": "bm_bots"}],
         ]}
         
         await self.send(chat_id, text, buttons)
     
     async def cmd_niches(self, chat_id: int):
-        """Горячие ниши"""
-        text = "🔥 *ГОРЯЧИЕ НИШИ 2024-2025*\n\n"
-        
-        for niche in MoneyKnowledgeBase.NICHES_2024_2025:
-            text += f"• *{niche['niche']}*\n"
-            text += f"  Тренд: {niche['trend']} | Конкуренция: {niche['competition']}\n\n"
-        
-        text += "_Выбери нишу и спроси подробнее!_"
-        
-        await self.send(chat_id, text)
+        await self.send(chat_id, MoneyKnowledge.get_niches())
     
-    async def cmd_quickwin(self, chat_id: int):
-        """Быстрые победы"""
-        text = "⚡ *БЫСТРЫЕ ПОБЕДЫ - ДЕНЬГИ ЗА НЕДЕЛЮ*\n\n"
-        
-        for i, qw in enumerate(MoneyKnowledgeBase.QUICK_WINS, 1):
-            text += f"*{i}. {qw['name']}*\n"
-            text += f"💰 {qw['income']}\n"
-            text += f"⏱ {qw['time']}\n"
-            text += f"📋 {' → '.join(qw['steps'])}\n\n"
-        
-        text += "_Напиши номер для подробного плана!_"
-        
-        await self.send(chat_id, text)
+    async def cmd_quick(self, chat_id: int):
+        await self.send(chat_id, MoneyKnowledge.get_quick_wins())
     
     async def cmd_stats(self, chat_id: int):
-        """Статистика"""
         await self.send(chat_id, stats.get_summary())
     
     async def cmd_agents(self, chat_id: int):
-        """Список агентов"""
-        text = f"🤖 *{len(swarm.agents)} АГЕНТОВ DEEPTHINK*\n\n"
-        
+        text = f"🤖 *{len(swarm.agents)} АГЕНТОВ:*\n\n"
         for agent in swarm.agents.values():
-            text += f"{agent.display_name}\n"
-            text += f"  _{agent.specialty}_\n"
+            text += f"{agent.display} - {agent.specialty}\n"
             text += f"  📊 Вызовов: {agent.calls}\n\n"
-        
         await self.send(chat_id, text)
-    
-    async def cmd_settings(self, chat_id: int, user_id: int):
-        """Настройки"""
-        profile = user_manager.profiles.get(user_id)
-        
-        text = f"""⚙️ *НАСТРОЙКИ*
-
-👤 ID: `{user_id}`
-📊 Запросов: {profile.total_queries if profile else 0}
-🎯 Уровень: {profile.expertise_level if profile else 'beginner'}
-
-💡 *Режим экономии:* {'✅ ВКЛ' if config.ECONOMY_MODE else '❌ ВЫКЛ'}
-_(бесплатные модели для экономии токенов)_
-
-🔧 Выбери настройку:"""
-        
-        buttons = {"inline_keyboard": [
-            [
-                {"text": "🌱 Новичок", "callback_data": f"lvl_beginner_{user_id}"},
-                {"text": "📈 Средний", "callback_data": f"lvl_intermediate_{user_id}"},
-                {"text": "🎓 Эксперт", "callback_data": f"lvl_expert_{user_id}"}
-            ],
-            [
-                {"text": "💰 Экономия ВКЛ" if not config.ECONOMY_MODE else "🚀 Экономия ВЫКЛ", 
-                 "callback_data": f"toggle_economy_{user_id}"}
-            ]
-        ]}
-        
-        await self.send(chat_id, text, buttons)
-    
-    async def cmd_mode(self, chat_id: int):
-        """Переключение режима"""
-        config.ECONOMY_MODE = not config.ECONOMY_MODE
-        status = "✅ ВКЛЮЧЁН" if config.ECONOMY_MODE else "❌ ВЫКЛЮЧЕН"
-        await self.send(chat_id, f"💡 Режим экономии токенов: {status}")
     
     # ═══════════════════════════════════════════════════════════════
     # ОБРАБОТКА СООБЩЕНИЙ
     # ═══════════════════════════════════════════════════════════════
     
-    async def handle_message(self, chat_id: int, user_data: Dict, text: str):
+    async def handle_message(self, chat_id: int, user_id: int, text: str):
         """Обработка сообщения"""
-        user_id = user_data.get("id")
-        profile = user_manager.get_profile(user_data)
-        context = user_manager.get_context(user_id)
         
-        # Сохраняем в контекст
-        context.add_message("user", text)
-        context.last_query = text
-        profile.total_queries += 1
+        stats.queries += 1
         
-        await self.send_typing(chat_id)
+        ctx = storage.get_context(user_id)
+        ctx["queries"] += 1
+        ctx["last_query"] = text
+        storage.add_message(user_id, "user", text)
         
-        # Статус
+        await self.typing(chat_id)
+        
         await self.send(chat_id,
             "🧠 *DEEP THINKING...*\n\n"
-            f"🤖 Собираю {config.MAX_AGENTS_PER_QUERY} экспертов...\n"
-            "⚡ Анализирую...\n"
+            f"🤖 Агенты анализируют...\n"
             "💰 Ищу способы заработка..."
         )
         
         try:
             # Думаем
-            result = await brain.think(text, context, profile)
+            result = await brain.think(text, storage.get_summary(user_id))
             
             response = result["response"]
-            agents_used = result["agents"]
+            agents = result["agents"]
             actions = result["actions"]
             think_time = result["time"]
             
-            # Сохраняем в контекст
-            context.add_message("assistant", response[:300])
-            context.last_actions = actions
-            context.last_response = response
+            # Сохраняем
+            ctx["last_response"] = response
+            storage.add_message(user_id, "assistant", response[:300])
             
-            # Сохраняем действия для callback
+            # Сохраняем действия
             for i, action in enumerate(actions):
-                self.pending_actions[f"act_{i}_{user_id}"] = {
+                storage.pending_actions[f"act_{i}_{user_id}"] = {
                     "action": action,
                     "context": text,
-                    "response": response[:1000]
+                    "response": response[:500]
                 }
             
             # Footer
-            agents_str = ", ".join(agents_used[:3])
+            agents_str = ", ".join(agents[:3])
             footer = f"\n\n---\n👥 _{agents_str}_\n⏱ _{think_time:.1f}с_"
             
-            full_response = response + footer
-            
-            # Кнопки
+            full = response + footer
             buttons = self.make_buttons(actions, user_id)
             
-            await self.send(chat_id, full_response[:4096], buttons)
+            await self.send(chat_id, full[:4096], buttons)
             
         except Exception as e:
-            logger.error(f"Error: {e}")
-            stats.record_error()
-            await self.send(chat_id, f"⚠️ Ошибка: {str(e)[:200]}\n\nПопробуй переформулировать.")
+            stats.errors += 1
+            log(f"Error: {e}", "ERROR")
+            await self.send(chat_id, f"⚠️ Ошибка: {str(e)[:150]}\n\nПопробуй переформулировать.")
     
     async def handle_callback(self, callback_id: str, chat_id: int, user_id: int, data: str):
         """Обработка callback"""
         
         await self.answer_callback(callback_id)
         
-        # Статистика
+        # Команды
         if data.startswith("stats_"):
             await self.cmd_stats(chat_id)
             return
         
-        # Помощь
-        if data.startswith("help_"):
-            await self.cmd_help(chat_id)
-            return
-        
-        # Настройки
-        if data.startswith("settings_"):
-            await self.cmd_settings(chat_id, user_id)
-            return
-        
-        # Способы заработка
         if data.startswith("income_"):
             await self.cmd_income(chat_id)
             return
         
-        # Ниши
         if data.startswith("niches_"):
             await self.cmd_niches(chat_id)
             return
         
-        # Быстрые победы
-        if data.startswith("quickwin_"):
-            await self.cmd_quickwin(chat_id)
+        if data.startswith("quick_"):
+            await self.cmd_quick(chat_id)
             return
         
         # Бизнес-модели
         if data.startswith("bm_"):
-            model_map = {
-                "bm_freelance": BusinessModel.FREELANCE,
-                "bm_affiliate": BusinessModel.AFFILIATE,
-                "bm_dropshipping": BusinessModel.DROPSHIPPING,
-                "bm_digital": BusinessModel.DIGITAL_PRODUCTS,
-                "bm_saas": BusinessModel.SAAS,
-                "bm_ai": BusinessModel.AI_SERVICES,
-            }
-            model = model_map.get(data)
-            if model:
-                info = MoneyKnowledgeBase.format_business_model(model)
-                await self.send(chat_id, info)
+            key = data[3:]  # Убираем "bm_"
+            info = MoneyKnowledge.get_model_info(key)
+            await self.send(chat_id, info)
             return
         
-        # Уровень
-        if data.startswith("lvl_"):
-            parts = data.split("_")
-            level = parts[1]
-            if user_id in user_manager.profiles:
-                user_manager.profiles[user_id].expertise_level = level
-            await self.send(chat_id, f"✅ Уровень: *{level}*")
-            return
-        
-        # Переключение экономии
-        if data.startswith("toggle_economy_"):
-            config.ECONOMY_MODE = not config.ECONOMY_MODE
-            status = "✅ ВКЛ" if config.ECONOMY_MODE else "❌ ВЫКЛ"
-            await self.send(chat_id, f"💡 Режим экономии: {status}")
-            return
-        
-        # Выполнение действия
+        # Действия
         if data.startswith("act_"):
             key = data
-            if key in self.pending_actions:
-                action_data = self.pending_actions[key]
+            if key in storage.pending_actions:
+                action_data = storage.pending_actions[key]
                 action = action_data["action"]
-                context = action_data.get("context", "")
-                response = action_data.get("response", "")
+                context = f"{action_data['context']}\n{action_data['response']}"
                 
-                await self.send_typing(chat_id)
+                await self.typing(chat_id)
                 await self.send(chat_id, f"⚙️ Выполняю: {action.get('name', '')}...")
                 
                 try:
-                    result = await ActionGenerator.execute(
-                        action, 
-                        f"{context}\n\n{response}"
-                    )
-                    
-                    profile = user_manager.profiles.get(user_id)
-                    if profile:
-                        profile.total_tasks += 1
+                    result = await execute_action(action, context)
+                    stats.tasks += 1
                     
                     # Разбиваем длинный ответ
                     if len(result) > 4000:
@@ -1570,12 +1034,11 @@ _(бесплатные модели для экономии токенов)_
                             await self.send(chat_id, header + part)
                     else:
                         await self.send(chat_id, f"✅ *Готово!*\n\n{result}")
-                        
+                
                 except Exception as e:
-                    await self.send(chat_id, f"⚠️ Ошибка: {str(e)[:200]}")
+                    await self.send(chat_id, f"⚠️ Ошибка: {str(e)[:150]}")
             else:
                 await self.send(chat_id, "⚠️ Действие устарело. Сделай новый запрос.")
-            return
     
     async def handle_update(self, update: Dict):
         """Обработка обновления"""
@@ -1584,30 +1047,32 @@ _(бесплатные модели для экономии токенов)_
             if "message" in update and "text" in update["message"]:
                 msg = update["message"]
                 chat_id = msg["chat"]["id"]
-                user_data = msg.get("from", {})
+                user = msg.get("from", {})
+                user_id = user.get("id", 0)
+                user_name = user.get("first_name", "User")
                 text = msg["text"]
                 
                 # Команды
-                commands = {
-                    "/start": lambda: self.cmd_start(chat_id, user_data),
-                    "/help": lambda: self.cmd_help(chat_id),
-                    "/income": lambda: self.cmd_income(chat_id),
-                    "/niches": lambda: self.cmd_niches(chat_id),
-                    "/quickwin": lambda: self.cmd_quickwin(chat_id),
-                    "/stats": lambda: self.cmd_stats(chat_id),
-                    "/agents": lambda: self.cmd_agents(chat_id),
-                    "/settings": lambda: self.cmd_settings(chat_id, user_data.get("id")),
-                    "/mode": lambda: self.cmd_mode(chat_id),
-                }
-                
-                if text in commands:
-                    await commands[text]()
+                if text == "/start":
+                    await self.cmd_start(chat_id, user_name)
+                elif text == "/help":
+                    await self.cmd_help(chat_id)
+                elif text == "/income":
+                    await self.cmd_income(chat_id)
+                elif text == "/niches":
+                    await self.cmd_niches(chat_id)
+                elif text == "/quick":
+                    await self.cmd_quick(chat_id)
+                elif text == "/stats":
+                    await self.cmd_stats(chat_id)
+                elif text == "/agents":
+                    await self.cmd_agents(chat_id)
                 elif text.startswith("/"):
                     await self.send(chat_id, "❓ Неизвестная команда. /help")
                 else:
-                    await self.handle_message(chat_id, user_data, text)
+                    await self.handle_message(chat_id, user_id, text)
             
-            # Callbacks
+            # Callback
             elif "callback_query" in update:
                 cb = update["callback_query"]
                 await self.handle_callback(
@@ -1618,33 +1083,32 @@ _(бесплатные модели для экономии токенов)_
                 )
                 
         except Exception as e:
-            logger.error(f"Update error: {e}")
-            stats.record_error()
+            stats.errors += 1
+            log(f"Update error: {e}", "ERROR")
     
     async def run(self):
         """Запуск бота"""
         
-        logger.info("=" * 60)
-        logger.info("🧠 DEEPTHINK AUTOHUSTLE v3.0 - ULTIMATE MONEY EDITION")
-        logger.info("=" * 60)
-        logger.info(f"🤖 Агентов: {len(swarm.agents)}")
-        logger.info(f"💡 Режим экономии: {'ВКЛ' if config.ECONOMY_MODE else 'ВЫКЛ'}")
-        logger.info(f"🔧 Модель: {config.DEFAULT_MODEL}")
-        logger.info("=" * 60)
+        log("=" * 50)
+        log("🧠 DEEPTHINK AUTOHUSTLE v3.0")
+        log("=" * 50)
+        log(f"🤖 Агентов: {len(swarm.agents)}")
+        log(f"🔧 Модель: {config.DEFAULT_MODEL}")
+        log("=" * 50)
         
         offset = 0
         
         async with httpx.AsyncClient(timeout=config.API_TIMEOUT) as client:
-            logger.info("✅ БОТ ЗАПУЩЕН!")
+            log("✅ БОТ ЗАПУЩЕН!")
             
             while True:
                 try:
-                    response = await client.get(
+                    resp = await client.get(
                         f"{self.api}/getUpdates",
                         params={"offset": offset, "timeout": config.POLLING_TIMEOUT}
                     )
                     
-                    data = response.json()
+                    data = resp.json()
                     
                     if data.get("ok") and data.get("result"):
                         for update in data["result"]:
@@ -1654,25 +1118,34 @@ _(бесплатные модели для экономии токенов)_
                 except httpx.TimeoutException:
                     continue
                 except Exception as e:
-                    logger.error(f"Polling error: {e}")
-                    stats.record_error()
+                    log(f"Polling error: {e}", "ERROR")
+                    stats.errors += 1
                     await asyncio.sleep(5)
 
 # ═══════════════════════════════════════════════════════════════════════════
-# ЗАПУСК
+# ГЛАВНАЯ ФУНКЦИЯ
 # ═══════════════════════════════════════════════════════════════════════════
 
 async def main():
     """Главная функция"""
-    print("\n" + "═" * 60)
+    
+    print("\n" + "=" * 60)
     print("🧠 DEEPTHINK AUTOHUSTLE v3.0")
     print("💰 ULTIMATE MONEY EDITION")
-    print("═" * 60 + "\n")
+    print("🚀 Render.com Ready")
+    print("=" * 60 + "\n")
     
-    bot = TelegramBot()
+    bot = Bot()
     await bot.run()
 
-if __name__ == "__main__":
+def run():
+    """Точка входа"""
+    
+    # Запускаем HTTP сервер для health check в отдельном потоке
+    health_thread = threading.Thread(target=start_health_server, daemon=True)
+    health_thread.start()
+    
+    # Запускаем бота
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
@@ -1681,3 +1154,6 @@ if __name__ == "__main__":
         print(f"❌ Ошибка: {e}")
         import traceback
         traceback.print_exc()
+
+if __name__ == "__main__":
+    run()
